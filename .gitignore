@@ -27,3 +27,6 @@ Thumbs.db
 *.pptx
 *.pdf
 !requirements.txt
+
+# Config (local override)
+config.local.yaml

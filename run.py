@@ -30,7 +30,8 @@ def cli():
     default="chi_sim+eng",
     help="OCR language (default: chi_sim+eng for Chinese and English)",
 )
-def convert(pdf_file, output, ocr, ocr_lang):
+@click.option("--no-llm", is_flag=True, help="Disable LLM enhancement")
+def convert(pdf_file, output, ocr, ocr_lang, no_llm):
     """
     Convert a PDF file to PPTX.
 
@@ -44,6 +45,9 @@ def convert(pdf_file, output, ocr, ocr_lang):
 
         # Convert with specific OCR language
         python run.py convert input.pdf --ocr --ocr-lang chi_sim
+
+        # Disable LLM enhancement
+        python run.py convert input.pdf --no-llm
     """
     from core import PDFToPPTConverter
 
@@ -57,6 +61,17 @@ def convert(pdf_file, output, ocr, ocr_lang):
 
     click.echo(f"Converting {pdf_file} to {ppt_path}...")
 
+    # Check LLM status
+    use_llm = not no_llm
+    if use_llm:
+        llm_status = PDFToPPTConverter.get_global_llm_status()
+        if llm_status.get("available"):
+            click.echo(click.style(f"✓ {llm_status['message']}", fg="green"))
+        elif llm_status.get("enabled"):
+            click.echo(click.style(f"⚠ LLM: {llm_status['message']}", fg="yellow"))
+        else:
+            click.echo(click.style(f"ℹ {llm_status['message']}", fg="blue"))
+
     try:
         # Perform conversion
         converter = PDFToPPTConverter(
@@ -64,6 +79,7 @@ def convert(pdf_file, output, ocr, ocr_lang):
             ppt_path=ppt_path,
             use_ocr=ocr,
             ocr_lang=ocr_lang,
+            use_llm=use_llm,
         )
 
         # Show progress
@@ -122,10 +138,52 @@ def web(host, port):
         python run.py web
         python run.py web --host 0.0.0.0 --port 8080
     """
+    from core import PDFToPPTConverter
     from web.app import run_server
 
+    # Check and display LLM status
+    llm_status = PDFToPPTConverter.get_global_llm_status()
+
     click.echo(f"Starting web server at http://{host}:{port}")
+
+    if llm_status.get("available"):
+        click.echo(click.style(f"✓ LLM: {llm_status['model']} @ {llm_status['base_url']}", fg="green"))
+    elif llm_status.get("enabled"):
+        click.echo(click.style(f"⚠ LLM: {llm_status['message']}", fg="yellow"))
+    else:
+        click.echo(click.style(f"ℹ LLM enhancement is disabled", fg="blue"))
+
     run_server(host=host, port=port)
+
+
+@cli.command()
+def llm_status():
+    """
+    Check LLM configuration and connection status.
+
+    Examples:
+        python run.py llm-status
+    """
+    from core import PDFToPPTConverter
+
+    status = PDFToPPTConverter.get_global_llm_status()
+
+    click.echo("\n=== LLM Status ===\n")
+
+    click.echo(f"Enabled: {click.style('Yes' if status.get('enabled') else 'No', fg='green' if status.get('enabled') else 'blue')}")
+    click.echo(f"Configured: {click.style('Yes' if status.get('configured') else 'No', fg='green' if status.get('configured') else 'yellow')}")
+
+    if status.get("available"):
+        click.echo(f"Available: {click.style('Yes', fg='green')}")
+        click.echo(f"Model: {status.get('model', 'N/A')}")
+        click.echo(f"Base URL: {status.get('base_url', 'N/A')}")
+    else:
+        click.echo(f"Available: {click.style('No', fg='red')}")
+        if status.get("error"):
+            click.echo(f"Error: {status['error']}")
+
+    click.echo(f"\nMessage: {status.get('message', 'N/A')}")
+    click.echo("")
 
 
 if __name__ == "__main__":

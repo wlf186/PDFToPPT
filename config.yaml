@@ -1,0 +1,25 @@
+# LLM Configuration for PDF to PPT Converter
+# Leave fields empty to disable LLM enhancement
+
+llm:
+  # Base URL of the LLM API service
+  # Example: http://localhost:8000/v1, https://api.openai.com/v1
+  base_url: ""
+
+  # API key for authentication (leave empty if not required)
+  api_key: ""
+
+  # Model name to use
+  # Example: qwen-vl-max-0809, gpt-4o, qwen3-vl-32b-instruct
+  model_name: ""
+
+  # Enable/disable LLM enhancement
+  # Set to true to use LLM for improving layout and text extraction
+  enabled: false
+
+  # Maximum number of pages to process with LLM per batch
+  # Reduce this if you encounter rate limiting or memory issues
+  batch_size: 5
+
+  # Timeout in seconds for LLM API calls
+  timeout: 60
