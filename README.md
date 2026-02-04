@@ -2,12 +2,12 @@
 
 <div align="center">
 
-A completely local Python tool that converts PDF files to editable PowerPoint presentations while preserving element positions.
+A Python tool that converts PDF files to editable PowerPoint presentations using multimodal LLM for OCR and layout enhancement.
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[Features](#features) | [Installation](#installation) | [Usage](#usage) | [FAQ](#faq)
+[Features](#features) | [Installation](#installation) | [LLM Setup](#llm-setup) | [Usage](#usage)
 
 </div>
 
@@ -18,10 +18,10 @@ A completely local Python tool that converts PDF files to editable PowerPoint pr
 - **Text Extraction** - Extracts text blocks with exact positioning
 - **Image Support** - Preserves images from PDF
 - **Table Detection** - Automatically detects and converts tables
-- **OCR Support** - Optional Tesseract OCR for scanned PDFs
+- **LLM-Powered OCR** - Uses multimodal LLM for scanned PDF text extraction
+- **Layout Enhancement** - Optional LLM analysis for improved slide layout
 - **Dual Interface** - Both CLI and Web interface
-- **Local Processing** - No external services required, 100% offline
-- **Smart Fallback** - Scanned PDFs render as images when OCR is unavailable
+- **Progress Tracking** - Real-time progress bar with LLM status
 
 ---
 
@@ -30,6 +30,9 @@ A completely local Python tool that converts PDF files to editable PowerPoint pr
 ```bash
 # Install dependencies
 pip install -r requirements.txt
+
+# Configure LLM service (see LLM Setup section below)
+# Edit config.yaml and set enabled: true
 
 # Convert PDF to PPT
 python run.py convert input.pdf -o output.pptx
@@ -42,83 +45,75 @@ python run.py web
 
 ## Installation
 
-### Method 1: Clone from GitHub
-
 ```bash
+# Clone from GitHub
 git clone https://github.com/wlf186/PDFToPPT.git
 cd PDFToPPT
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Method 2: Download ZIP
-
-1. Download the repository as ZIP from GitHub
-2. Extract to a folder
-3. Open terminal/command prompt in that folder
-4. Run: `pip install -r requirements.txt`
-
 ---
 
-## Platform-Specific Setup
+## LLM Setup
 
-### Windows
+This tool requires a multimodal LLM service for OCR and layout enhancement. You can use:
 
-#### Prerequisites
-1. Install Python 3.8+ from [python.org](https://www.python.org/downloads/)
-   - During installation, check **"Add Python to PATH"**
-
-2. Install dependencies:
-   ```cmd
-   pip install -r requirements.txt
-   ```
-
-#### Optional: OCR Support (for scanned PDFs)
-1. Download Tesseract installer:
-   - [64-bit Windows](https://github.com/UB-Mannheim/tesseract/wiki)
-2. Install to default location: `C:\Program Files\Tesseract-OCR`
-3. Restart your command prompt
-
-#### Run on Windows
-```cmd
-# CLI mode
-python run.py convert input.pdf -o output.pptx
-
-# Web mode
-python run.py web
-```
-
----
-
-### macOS
-
-#### Prerequisites
-```bash
-# Install Python 3 (if not installed)
-brew install python3
-
-# Install dependencies
-pip3 install -r requirements.txt
-```
-
-#### Optional: OCR Support
-```bash
-brew install tesseract tesseract-lang
-```
-
----
-
-### Linux (Ubuntu/Debian)
+### Option 1: Ollama (Recommended, Free)
 
 ```bash
-# Install Python and pip
-sudo apt update
-sudo apt install python3 python3-pip
+# Install Ollama from https://ollama.ai
+# Pull a multimodal model
+ollama pull qwen3-vl:4b
+# or
+ollama pull qwen2.5-vl:7b
+```
 
-# Install dependencies
-pip3 install -r requirements.txt
+Edit `config.yaml`:
+```yaml
+llm:
+  preset: ollama
+  model_name: qwen3-vl:4b  # or qwen2.5-vl:7b, llava:7b
+  enabled: true
+```
 
-# Optional: OCR Support
-sudo apt install tesseract-ocr tesseract-ocr-chi-sim
+### Option 2: OpenAI-Compatible API
+
+Edit `config.yaml`:
+```yaml
+llm:
+  preset: custom
+  base_url: "http://your-server:8000/v1"
+  api_key: "your-api-key"
+  model_name: "qwen3-vl-32b-instruct"
+  enabled: true
+  no_proxy: "your-server-domain"  # For internal services
+```
+
+### Available Presets
+
+| Preset | Base URL | Default Model |
+|--------|----------|---------------|
+| `ollama` | `http://localhost:11434/v1` | `qwen3-vl:4b` |
+| `openai` | `https://api.openai.com/v1` | `gpt-4o` |
+| `custom` | (manual) | (manual) |
+
+### Check LLM Status
+
+```bash
+python run.py llm-status
+```
+
+Output:
+```
+=== LLM Status ===
+
+Enabled: Yes
+Configured: Yes
+Available: Yes
+Model: qwen3-vl:4b [ollama]
+Base URL: http://localhost:11434/v1
 ```
 
 ---
@@ -132,14 +127,15 @@ sudo apt install tesseract-ocr tesseract-ocr-chi-sim
 python run.py convert input.pdf -o output.pptx
 ```
 
-**Convert with OCR (for scanned PDFs):**
+**With progress bar:**
 ```bash
-python run.py convert input.pdf -o output.pptx --ocr
+python run.py convert input.pdf -o output.pptx
+# Shows: Converting: 50%|████▌     | 5/10 [00:15<00:15, 3.1s/page, Page 5/10 done [LLM]]
 ```
 
-**Specify OCR language:**
+**Disable LLM enhancement:**
 ```bash
-python run.py convert input.pdf --ocr --ocr-lang chi_sim
+python run.py convert input.pdf --no-llm
 ```
 
 **Get PDF information:**
@@ -147,20 +143,54 @@ python run.py convert input.pdf --ocr --ocr-lang chi_sim
 python run.py info input.pdf
 ```
 
----
-
 ### Web Mode
 
-**Start the web server:**
 ```bash
 python run.py web
+# Opens at http://localhost:8000
 ```
 
-Then open your browser to `http://localhost:8000`
+Web interface shows:
+- LLM connection status
+- Real-time progress in console logs
+- File upload and download
 
-**Custom host/port:**
-```bash
-python run.py web --host 0.0.0.0 --port 8080
+---
+
+## Configuration
+
+Edit `config.yaml` to customize:
+
+```yaml
+llm:
+  # Quick preset selection (ollama, openai, custom)
+  preset: "ollama"
+
+  # Override preset values if needed
+  model_name: "qwen2.5-vl:7b"
+
+  # Enable LLM features
+  enabled: true
+
+  # For internal services, bypass proxy
+  no_proxy: "localhost"
+
+  # Timeout for API calls
+  timeout: 60
+```
+
+---
+
+## How It Works
+
+1. **PDF Parsing** - Uses PyMuPDF to extract elements
+2. **OCR for Scanned PDFs** - Multimodal LLM extracts text from images
+3. **Layout Enhancement** - Optional LLM analysis for better slide structure
+4. **Coordinate Conversion** - Converts PDF points to PPTX EMU
+5. **PPT Generation** - Creates PPTX file with python-pptx
+
+```
+PDF → [PyMuPDF] → Elements → [LLM OCR] → Text + [LLM Enhancement] → Layout → [python-pptx] → PPTX
 ```
 
 ---
@@ -174,98 +204,55 @@ pdf-to-ppt/
 │   │   ├── converter.py       # Core conversion logic
 │   │   ├── pdf_parser.py      # PDF element extraction
 │   │   ├── ppt_builder.py     # PPT construction
-│   │   └── ocr_handler.py     # OCR text recognition
+│   │   ├── ocr_handler.py     # LLM-based OCR
+│   │   ├── llm_client.py      # LLM API client
+│   │   └── config.py          # Configuration management
 │   ├── web/
 │   │   ├── app.py             # FastAPI application
 │   │   └── templates/
 │   │       └── index.html     # Web interface
 │   └── cli.py                 # Command-line interface
+├── config.yaml                # LLM configuration
 ├── requirements.txt
-├── README.md
 └── run.py                     # Entry point
 ```
 
 ---
 
-## How It Works
+## Requirements
 
-1. **PDF Parsing** - Uses PyMuPDF to extract text, images, and table structures
-2. **Coordinate Conversion** - Converts PDF coordinates (points) to PPTX coordinates (EMU)
-3. **Element Mapping**:
-   - Text blocks → Text boxes with font preservation
-   - Images → Picture shapes
-   - Tables → Table structures
-4. **PPT Generation** - Creates PPTX file with python-pptx
-
-### Smart Fallback for Scanned PDFs
-
-If you don't have Tesseract OCR installed, scanned PDFs will be automatically rendered as images instead of failing. This ensures the tool works even without OCR dependencies.
-
----
-
-## OCR Languages
-
-Supported languages depend on Tesseract installation. Common ones:
-
-| Language | Code |
-|----------|------|
-| Chinese (Simplified) | `chi_sim` |
-| Chinese (Traditional) | `chi_tra` |
-| English | `eng` |
-| Japanese | `jpn` |
-| Korean | `kor` |
-
-Combine multiple languages with `+`: `chi_sim+eng`
+- Python 3.8+
+- Multimodal LLM service (Ollama, OpenAI, or compatible)
+- Dependencies:
+  - `pymupdf` - PDF parsing
+  - `python-pptx` - PPT generation
+  - `openai` - LLM API client
+  - `pydantic` - Configuration
+  - `pyyaml` - Config file parsing
 
 ---
 
 ## FAQ
 
-### Q: Do I need to install Tesseract OCR?
-**A:** Only if you want to extract text from scanned PDFs. For regular PDFs with embedded text, it's not required.
+### Q: Is this tool completely free?
+**A:** Yes, if you use Ollama with local models. It runs entirely on your machine.
 
-### Q: What happens if I try to convert a scanned PDF without OCR?
-**A:** The page will be rendered as an image in the PPT. You can view it, but the text won't be editable.
+### Q: Can I use this offline?
+**A:** Yes, with Ollama running locally.
 
-### Q: Does this work offline?
-**A:** Yes, completely. No internet connection required.
+### Q: What if I don't configure an LLM?
+**A:** The tool will still work for PDFs with embedded text. Scanned PDFs will render as images.
+
+### Q: Which LLM model should I use?
+**A:**
+- **Local (free)**: `qwen3-vl:4b`, `qwen2.5-vl:7b`, `llava:7b`
+- **Cloud**: `gpt-4o`, `claude-3.5-sonnet` (via compatible API)
+
+### Q: How long does conversion take?
+**A:** Depends on PDF size and LLM speed. With local Ollama: ~2-5 seconds per page.
 
 ### Q: Can I convert password-protected PDFs?
-**A:** No, you need to remove the password protection first.
-
-### Q: The conversion is slow for large files. Is this normal?
-**A:** Yes, processing time depends on file size and complexity. Files with many images may take longer.
-
-### Q: Windows says "python is not recognized"
-**A:** Make sure you checked "Add Python to PATH" during installation, or use `py` instead of `python`.
-
----
-
-## Limitations
-
-- PDF password protection must be removed before conversion
-- Complex layouts may not be perfectly preserved
-- Fonts may be substituted if not available in PPT
-- Large files (>50MB) may take longer to process
-- Vector graphics are converted to images
-
----
-
-## Requirements
-
-- Python 3.8 or higher
-- Dependencies listed in `requirements.txt`:
-  - pymupdf (PDF parsing)
-  - python-pptx (PPT generation)
-  - fastapi + uvicorn (Web server)
-  - click (CLI)
-  - pytesseract (OCR, optional)
-
----
-
-## Contributing
-
-Contributions are welcome! Feel free to open issues or submit pull requests.
+**A:** No, remove password protection first.
 
 ---
 
