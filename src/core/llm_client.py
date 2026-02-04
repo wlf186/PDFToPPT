@@ -1,7 +1,6 @@
 """LLM client for PDF to PPT conversion enhancement."""
 
 import base64
-import io
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -11,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """Client for interacting with LLM API services."""
+    """Client for interacting with LLM API services using OpenAI-compatible interface."""
 
     def __init__(self, config: LLMConfig):
         """
@@ -23,20 +22,27 @@ class LLMClient:
         self.config = config
         self._available = False
         self._error_message: Optional[str] = None
+        self._client = None
 
         # Check if configured
         if not config.is_configured():
             self._error_message = "LLM not configured (set base_url and model_name in config.yaml)"
             return
 
-        # Try to import httpx
+        # Try to import and initialize OpenAI client
         try:
-            import httpx
+            from openai import OpenAI
 
-            self._httpx = httpx
+            # Initialize OpenAI client with custom base_url
+            self._client = OpenAI(
+                base_url=config.base_url,
+                api_key=config.api_key or "dummy-key",  # Some services require a key
+            )
             self._available = True
         except ImportError:
-            self._error_message = "httpx not installed. Install with: pip install httpx"
+            self._error_message = "openai not installed. Install with: pip install openai"
+        except Exception as e:
+            self._error_message = f"Failed to initialize OpenAI client: {str(e)}"
 
     def is_available(self) -> bool:
         """Check if LLM client is available."""
@@ -52,7 +58,30 @@ class LLMClient:
             return f"{self.config.model_name} @ {self.config.base_url}"
         return f"Not available: {self._error_message}"
 
-    async def enhance_page(
+    def _encode_image_to_base64(self, image_bytes: bytes) -> str:
+        """
+        Encode image bytes to base64 data URL format.
+
+        Args:
+            image_bytes: Image data as bytes
+
+        Returns:
+            Base64 encoded data URL string
+        """
+        base64_str = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Detect image type from magic bytes
+        if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+            mime_type = "image/png"
+        elif image_bytes[:2] == b'\xff\xd8':
+            mime_type = "image/jpeg"
+        else:
+            # Default to PNG for PyMuPDF rendered images
+            mime_type = "image/png"
+
+        return f"data:{mime_type};base64,{base64_str}"
+
+    def enhance_page(
         self,
         page_image: bytes,
         page_number: int,
@@ -69,24 +98,44 @@ class LLMClient:
         Returns:
             Dictionary with enhanced layout and content information
         """
-        if not self._available:
+        if not self._available or self._client is None:
             return {"error": self._error_message}
 
         try:
-            # Encode image to base64
-            image_base64 = base64.b64encode(page_image).decode("utf-8")
-            image_url = f"data:image/png;base64,{image_base64}"
+            # Encode image to base64 data URL
+            image_url = self._encode_image_to_base64(page_image)
 
             # Prepare prompt
             prompt = self._build_prompt(page_number, extracted_text)
 
-            # Call LLM API
-            response = await self._call_llm(
-                images=[image_url],
-                prompt=prompt,
+            # Call LLM API using OpenAI client
+            response = self._client.chat.completions.create(
+                model=self.config.model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": image_url}},
+                        ],
+                    }
+                ],
+                max_tokens=4096,
+                temperature=0.1,
+                timeout=self.config.timeout,
             )
 
-            return response
+            # Parse response
+            content = response.choices[0].message.content
+
+            # Try to parse JSON response
+            import json
+
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # If not JSON, return as text
+                return {"raw_response": content}
 
         except Exception as e:
             logger.warning(f"LLM call failed for page {page_number}: {e}")
@@ -123,102 +172,26 @@ Focus on:
 
 Respond ONLY with valid JSON, no additional text."""
 
-    async def _call_llm(
-        self,
-        images: List[str],
-        prompt: str,
-    ) -> Dict[str, Any]:
-        """
-        Call LLM API.
-
-        Args:
-            images: List of image URLs (base64 data URLs)
-            prompt: Text prompt
-
-        Returns:
-            Parsed response as dictionary
-        """
-        import httpx
-
-        # Build messages
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    *[{"type": "image_url", "image_url": {"url": img}} for img in images],
-                ],
-            }
-        ]
-
-        # Make API request
-        headers = {}
-        if self.config.api_key:
-            headers["Authorization"] = f"Bearer {self.config.api_key}"
-
-        timeout = httpx.Timeout(self.config.timeout, connect=10.0)
-
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{self.config.base_url.rstrip('/')}/chat/completions",
-                json={
-                    "model": self.config.model_name,
-                    "messages": messages,
-                    "max_tokens": 4096,
-                    "temperature": 0.1,
-                },
-                headers=headers,
-            )
-            response.raise_for_status()
-            data = response.json()
-
-        # Parse response
-        content = data["choices"][0]["message"]["content"]
-
-        # Try to parse JSON response
-        import json
-
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            # If not JSON, return as text
-            return {"raw_response": content}
-
-    async def test_connection(self) -> tuple[bool, str]:
+    def test_connection(self) -> tuple[bool, str]:
         """
         Test LLM connection.
 
         Returns:
             Tuple of (success, message)
         """
-        if not self._available:
+        if not self._available or self._client is None:
             return False, self._error_message or "Not configured"
 
         try:
-            import httpx
+            # Simple test request
+            response = self._client.chat.completions.create(
+                model=self.config.model_name,
+                messages=[{"role": "user", "content": "test"}],
+                max_tokens=10,
+                timeout=10,
+            )
 
-            headers = {}
-            if self.config.api_key:
-                headers["Authorization"] = f"Bearer {self.config.api_key}"
-
-            timeout = httpx.Timeout(10.0, connect=5.0)
-
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                # Simple test request
-                response = await client.post(
-                    f"{self.config.base_url.rstrip('/')}/chat/completions",
-                    json={
-                        "model": self.config.model_name,
-                        "messages": [{"role": "user", "content": "test"}],
-                        "max_tokens": 10,
-                    },
-                    headers=headers,
-                )
-
-            if response.status_code == 200:
-                return True, f"Connected to {self.config.model_name} @ {self.config.base_url}"
-            else:
-                return False, f"API returned status {response.status_code}: {response.text[:200]}"
+            return True, f"Connected to {self.config.model_name} @ {self.config.base_url}"
 
         except Exception as e:
             return False, f"Connection failed: {str(e)}"
@@ -230,7 +203,7 @@ Respond ONLY with valid JSON, no additional text."""
         extracted_text: str,
     ) -> Dict[str, Any]:
         """
-        Synchronous version of enhance_page.
+        Synchronous version of enhance_page (already sync with OpenAI client).
 
         Args:
             page_image: Page image as bytes
@@ -240,26 +213,8 @@ Respond ONLY with valid JSON, no additional text."""
         Returns:
             Dictionary with enhanced layout information
         """
-        import asyncio
-
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(
-            self.enhance_page(page_image, page_number, extracted_text)
-        )
+        return self.enhance_page(page_image, page_number, extracted_text)
 
     def test_connection_sync(self) -> tuple[bool, str]:
-        """Synchronous version of test_connection."""
-        import asyncio
-
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(self.test_connection())
+        """Synchronous version of test_connection (already sync with OpenAI client)."""
+        return self.test_connection()
