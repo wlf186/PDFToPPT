@@ -9,7 +9,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..core import PDFToPPTConverter
+from core import PDFToPPTConverter
 
 app = FastAPI(title="PDF to PPT Converter", version="1.0.0")
 
