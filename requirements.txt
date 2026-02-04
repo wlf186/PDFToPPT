@@ -4,7 +4,7 @@
 PyMuPDF>=1.23.0
 
 # PPT generation
-python-pptx>=1.0.0
+python-pptx>=0.6.21
 
 # Web framework
 fastapi>=0.115.0
