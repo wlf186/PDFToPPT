@@ -31,7 +31,8 @@ def cli():
     help="OCR language (default: chi_sim+eng for Chinese and English)",
 )
 @click.option("--no-llm", is_flag=True, help="Disable LLM enhancement")
-def convert(pdf_file, output, ocr, ocr_lang, no_llm):
+@click.option("--no-progress", is_flag=True, help="Disable progress bar")
+def convert(pdf_file, output, ocr, ocr_lang, no_llm, no_progress):
     """
     Convert a PDF file to PPTX.
 
@@ -48,6 +49,9 @@ def convert(pdf_file, output, ocr, ocr_lang, no_llm):
 
         # Disable LLM enhancement
         python run.py convert input.pdf --no-llm
+
+        # Disable progress bar
+        python run.py convert input.pdf --no-progress
     """
     from core import PDFToPPTConverter
 
@@ -73,6 +77,39 @@ def convert(pdf_file, output, ocr, ocr_lang, no_llm):
             click.echo(click.style(f"ℹ {llm_status['message']}", fg="blue"))
 
     try:
+        # Setup progress callback
+        progress_bar = None
+        last_message = [""]
+
+        def progress_callback(current: int, total: int, using_llm: bool, message: str):
+            nonlocal progress_bar, last_message
+
+            if no_progress:
+                if message and message != last_message[0]:
+                    if using_llm:
+                        click.echo(f"  {message} " + click.style("[LLM]", fg="cyan"))
+                    else:
+                        click.echo(f"  {message}")
+                    last_message[0] = message
+                return
+
+            if progress_bar is None:
+                # Initialize progress bar
+                from tqdm import tqdm
+
+                progress_bar = tqdm(
+                    total=total,
+                    desc="Converting",
+                    unit="page",
+                    colour="green",
+                )
+
+            # Update progress bar
+            progress_bar.n = current
+            llm_tag = " [LLM]" if using_llm else ""
+            progress_bar.set_postfix_str(f"{message}{llm_tag}")
+            progress_bar.refresh()
+
         # Perform conversion
         converter = PDFToPPTConverter(
             pdf_path=pdf_path,
@@ -80,17 +117,28 @@ def convert(pdf_file, output, ocr, ocr_lang, no_llm):
             use_ocr=ocr,
             ocr_lang=ocr_lang,
             use_llm=use_llm,
+            progress_callback=progress_callback,
         )
 
-        # Show progress
+        # Get page count
         page_count = converter.get_page_count()
-        click.echo(f"Processing {page_count} page(s)...")
+        if no_progress:
+            click.echo(f"Processing {page_count} page(s)...")
 
         result_path = converter.convert()
 
-        click.echo(f"Successfully created: {result_path}")
+        # Close progress bar
+        if progress_bar is not None:
+            progress_bar.close()
+
+        # Show output location
+        click.echo("")
+        click.echo(click.style(f"✓ Successfully created:", fg="green", bold=True))
+        click.echo(f"  {result_path}")
 
     except Exception as e:
+        if progress_bar is not None:
+            progress_bar.close()
         click.echo(f"Error during conversion: {e}", err=True)
         sys.exit(1)
 

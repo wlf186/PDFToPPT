@@ -3,7 +3,7 @@
 import io
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import pymupdf
 
@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Conversion ratio: 1 inch = 914400 EMU, 1 inch = 72 points
 PDF_TO_EMU = 12700
 
+# Progress callback type: (current_page, total_pages, using_llm, message)
+ProgressCallback = Callable[[int, int, bool, str], None]
+
 
 class PDFToPPTConverter:
     """Convert PDF files to editable PowerPoint presentations."""
@@ -28,6 +31,7 @@ class PDFToPPTConverter:
         use_ocr: bool = False,
         ocr_lang: str = "chi_sim+eng",
         use_llm: bool = True,
+        progress_callback: Optional[ProgressCallback] = None,
     ):
         """
         Initialize the converter.
@@ -38,12 +42,14 @@ class PDFToPPTConverter:
             use_ocr: Whether to use OCR for text extraction
             ocr_lang: OCR language(s) to use
             use_llm: Whether to use LLM enhancement (if configured)
+            progress_callback: Optional callback for progress updates
         """
         self.pdf_path = Path(pdf_path)
         self.ppt_path = Path(ppt_path)
         self.use_ocr = use_ocr
         self.ocr_lang = ocr_lang
         self.use_llm = use_llm
+        self.progress_callback = progress_callback
         self.doc: Optional[pymupdf.Document] = None
 
         # Load LLM configuration
@@ -52,6 +58,11 @@ class PDFToPPTConverter:
 
         if self.use_llm and self.config.llm.enabled:
             self.llm_client = LLMClient(self.config.llm)
+
+    def _update_progress(self, current: int, total: int, using_llm: bool, message: str = ""):
+        """Call progress callback if available."""
+        if self.progress_callback:
+            self.progress_callback(current, total, using_llm, message)
 
     def get_llm_status(self) -> dict:
         """
@@ -100,6 +111,7 @@ class PDFToPPTConverter:
             Path to the created PPTX file
         """
         self.doc = pymupdf.open(self.pdf_path)
+        total_pages = len(self.doc)
 
         # Get PDF page dimensions
         first_page = self.doc[0]
@@ -120,6 +132,12 @@ class PDFToPPTConverter:
 
         # Process each page
         for page_num, page in enumerate(self.doc):
+            current_page = page_num + 1
+            using_llm_this_page = False
+
+            # Update progress - starting page
+            self._update_progress(current_page, total_pages, False, f"Processing page {current_page}/{total_pages}")
+
             # Create a new slide for this page
             builder.add_slide()
 
@@ -156,6 +174,9 @@ class PDFToPPTConverter:
 
             # Use LLM for enhancement if available
             if llm_available and self.llm_client:
+                using_llm_this_page = True
+                self._update_progress(current_page, total_pages, True, f"Page {current_page}: LLM analyzing...")
+
                 try:
                     # Render page as image for LLM
                     page_image = extractor.render_page_as_image(page)
@@ -163,19 +184,21 @@ class PDFToPPTConverter:
                     # Get LLM enhancement
                     enhancement = self.llm_client.enhance_page_sync(
                         page_image=page_image,
-                        page_number=page_num + 1,
+                        page_number=current_page,
                         extracted_text=page_text,
                     )
 
                     if "error" not in enhancement:
-                        logger.debug(f"Page {page_num + 1} LLM enhancement successful")
+                        logger.debug(f"Page {current_page} LLM enhancement successful")
                         # Enhancement data available for future use
                         # Can be used to improve layout, styling, etc.
                     else:
-                        logger.warning(f"Page {page_num + 1} LLM enhancement failed: {enhancement.get('error')}")
+                        logger.warning(f"Page {current_page} LLM enhancement failed: {enhancement.get('error')}")
+                        using_llm_this_page = False
 
                 except Exception as e:
-                    logger.warning(f"LLM enhancement failed for page {page_num + 1}: {e}")
+                    logger.warning(f"LLM enhancement failed for page {current_page}: {e}")
+                    using_llm_this_page = False
 
             # Check if page has any extractable content
             # If no text, images, or tables were found, render the whole page as an image
@@ -188,10 +211,20 @@ class PDFToPPTConverter:
                     bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
                 )
 
+            # Update progress - page completed
+            llm_status = " [LLM]" if using_llm_this_page else ""
+            self._update_progress(current_page, total_pages, using_llm_this_page, f"Page {current_page}/{total_pages} done{llm_status}")
+
         self.doc.close()
+
+        # Update progress - saving
+        self._update_progress(total_pages, total_pages, False, "Saving presentation...")
 
         # Save the presentation
         builder.save(self.ppt_path)
+
+        # Update progress - complete
+        self._update_progress(total_pages, total_pages, False, f"Saved to: {self.ppt_path}")
 
         return self.ppt_path
 

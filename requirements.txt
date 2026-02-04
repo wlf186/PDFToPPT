@@ -14,6 +14,7 @@ python-multipart>=0.0.9
 
 # CLI
 click>=8.1.0
+tqdm>=4.65.0
 
 # OCR support
 pytesseract>=0.3.10

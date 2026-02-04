@@ -82,18 +82,27 @@ async def convert_pdf(
         output_filename = pdf_path.stem + ".pptx"
         ppt_path = temp_dir_path / output_filename
 
+        # Setup progress callback for logging
+        def progress_callback(current: int, total: int, using_llm: bool, message: str):
+            """Log progress updates."""
+            llm_tag = " [LLM]" if using_llm else ""
+            logger.info(f"[{file.filename}] Page {current}/{total}{llm_tag}: {message}")
+
         # Perform conversion
         try:
+            logger.info(f"[{file.filename}] Starting conversion...")
             converter = PDFToPPTConverter(
                 pdf_path=pdf_path,
                 ppt_path=ppt_path,
                 use_ocr=ocr,
                 ocr_lang=ocr_lang,
                 use_llm=use_llm,
+                progress_callback=progress_callback,
             )
             converter.convert()
+            logger.info(f"[{file.filename}] Conversion completed successfully")
         except Exception as e:
-            logger.error(f"Conversion failed: {e}")
+            logger.error(f"[{file.filename}] Conversion failed: {e}")
             raise HTTPException(
                 status_code=500, detail=f"Conversion failed: {str(e)}"
             )
@@ -173,7 +182,11 @@ def run_server(host: str = "127.0.0.1", port: int = 8000):
     """
     import uvicorn
 
-    uvicorn.run(app, host=host, port=port)
+    # Configure logging to show progress
+    logging_config = uvicorn.config.LOGGING_CONFIG
+    logging_config["formatters"]["default"]["fmt"] = "%(levelname)s: %(message)s"
+
+    uvicorn.run(app, host=host, port=port, log_config=logging_config)
 
 
 if __name__ == "__main__":
