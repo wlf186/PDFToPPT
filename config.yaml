@@ -3,40 +3,45 @@
 llm:
   # Preset configurations (quick switch between different LLM providers)
   # Available presets: ollama, openai, custom
-  # - preset: auto-fills base_url, model_name, no_proxy (if not set below)
-  # - custom: use only manual configuration below
-  # - You can override any preset value by setting it below
   preset: "custom"
 
-  # --- Preset: Ollama (local) ---
+  # --- Preset: Ollama (local, CPU inference = slow) ---
   # Auto-fills: base_url=http://localhost:11434/v1, model_name=qwen3-vl:4b
-  # Override model_name to use different Ollama models:
-  #   - qwen2.5-vl:7b, llava:7b, minicpm-v:6b, etc.
+  # NOTE: LLM enhancement is DISABLED by default for ollama due to slow CPU inference
+  # Set use_enhancement: true if you want to enable it (very slow on CPU)
   # Example:
   #   preset: ollama
-  #   model_name: qwen2.5-vl:7b  # Override default
   #   enabled: true
+  #   use_enhancement: false  # Recommended: keep false for CPU
 
-  # --- Preset: OpenAI ---
+  # --- Preset: OpenAI / Cloud API ---
   # Auto-fills: base_url=https://api.openai.com/v1, model_name=gpt-4o
-  # You must provide: api_key
+  # LLM enhancement enabled by default for fast cloud APIs
   # Example:
-  #   preset: openai
-  #   api_key: sk-xxx
+  #   preset: custom
+  #   base_url: https://your-api.com/v1
+  #   model_name: qwen3-vl-32b-instruct
   #   enabled: true
+  #   use_enhancement: true
 
   # --- Manual Configuration ---
-  # Used when preset=custom, or to override preset values
   base_url: ""
   api_key: ""
   model_name: ""
 
-  # Enable/disable LLM enhancement
+  # Enable LLM for OCR (scanned PDFs)
+  # If false, scanned PDFs will render as images instead
   enabled: false
+
+  # Enable LLM layout enhancement (analyzes page structure)
+  # WARNING: Very slow on CPU! Only enable for GPU/cloud APIs
+  # - ollama preset: automatically set to false (CPU is too slow)
+  # - cloud APIs: set to true for better layout
+  use_enhancement: false
 
   # No proxy settings (auto-filled by ollama preset)
   no_proxy: ""
 
   # Advanced settings
   batch_size: 5
-  timeout: 60
+  timeout: 180

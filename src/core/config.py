@@ -14,12 +14,14 @@ LLM_PRESETS = {
         "api_key": "",
         "model_name": "qwen3-vl:4b",
         "no_proxy": "localhost",
+        "use_enhancement": False,  # CPU inference is too slow
     },
     "openai": {
         "base_url": "https://api.openai.com/v1",
-        "api_key": "",  # User needs to provide
+        "api_key": "",
         "model_name": "gpt-4o",
         "no_proxy": "",
+        "use_enhancement": True,  # Cloud API is fast enough
     },
 }
 
@@ -31,7 +33,8 @@ class LLMConfig(BaseModel):
     base_url: str = Field(default="", description="Base URL of the LLM API service")
     api_key: str = Field(default="", description="API key for authentication")
     model_name: str = Field(default="", description="Model name to use")
-    enabled: bool = Field(default=False, description="Enable LLM enhancement")
+    enabled: bool = Field(default=False, description="Enable LLM for OCR")
+    use_enhancement: bool = Field(default=False, description="Enable LLM layout enhancement (slow on CPU)")
     no_proxy: str = Field(default="", description="No proxy settings for internal services")
     batch_size: int = Field(default=5, description="Pages per batch")
     timeout: int = Field(default=60, description="API timeout in seconds")
@@ -66,6 +69,8 @@ class LLMConfig(BaseModel):
             # api_key from preset only if it's not empty (for security)
             if preset_config["api_key"] and not self.api_key:
                 self.api_key = preset_config["api_key"]
+            # use_enhancement from preset
+            self.use_enhancement = preset_config["use_enhancement"]
         return self
 
 

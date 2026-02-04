@@ -128,7 +128,11 @@ class PDFToPPTConverter:
         llm_available = False
         if self.use_llm and self.llm_client and self.llm_client.is_available():
             llm_available = True
-            logger.info(f"LLM enhancement enabled: {self.llm_client.get_info()}")
+            logger.info(f"LLM available: {self.llm_client.get_info()}")
+            if self.config.llm.use_enhancement:
+                logger.info("LLM layout enhancement: ENABLED (may be slow on CPU)")
+            else:
+                logger.info("LLM layout enhancement: DISABLED (OCR only)")
 
         # Process each page
         for page_num, page in enumerate(self.doc):
@@ -172,8 +176,8 @@ class PDFToPPTConverter:
                     data=table_block.data,
                 )
 
-            # Use LLM for enhancement if available
-            if llm_available and self.llm_client:
+            # Use LLM for enhancement if available AND enabled in config
+            if llm_available and self.llm_client and self.config.llm.use_enhancement:
                 using_llm_this_page = True
                 self._update_progress(current_page, total_pages, True, f"Page {current_page}: LLM analyzing...")
 
