@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from core import PDFToPPTConverter
@@ -71,15 +71,18 @@ async def convert_pdf(
                 status_code=500, detail=f"Conversion failed: {str(e)}"
             )
 
-        # Return the converted file
+        # Read the converted file into memory before temp dir is deleted
         if not ppt_path.exists():
             raise HTTPException(status_code=500, detail="Conversion failed - no output file")
 
-        return FileResponse(
-            path=str(ppt_path),
-            filename=output_filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        )
+        ppt_bytes = ppt_path.read_bytes()
+
+    # Return the file from memory (after temp dir is cleaned up)
+    return StreamingResponse(
+        io.BytesIO(ppt_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f"attachment; filename={output_filename}"},
+    )
 
 
 @app.post("/info")
