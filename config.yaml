@@ -1,58 +1,42 @@
 # LLM Configuration for PDF to PPT Converter
-# Leave fields empty to disable LLM enhancement
 
 llm:
   # Preset configurations (quick switch between different LLM providers)
   # Available presets: ollama, openai, custom
-  # Set to 'custom' to use manual configuration below
+  # - preset: auto-fills base_url, model_name, no_proxy (if not set below)
+  # - custom: use only manual configuration below
+  # - You can override any preset value by setting it below
   preset: "custom"
 
   # --- Preset: Ollama (local) ---
-  # For ollama preset, these values are used automatically:
-  # base_url: http://localhost:11434/v1
-  # api_key: (empty)
-  # model_name: qwen3-vl:4b (or your ollama model)
-  # no_proxy: localhost
+  # Auto-fills: base_url=http://localhost:11434/v1, model_name=qwen3-vl:4b
+  # Override model_name to use different Ollama models:
+  #   - qwen2.5-vl:7b, llava:7b, minicpm-v:6b, etc.
+  # Example:
+  #   preset: ollama
+  #   model_name: qwen2.5-vl:7b  # Override default
+  #   enabled: true
 
   # --- Preset: OpenAI ---
-  # For openai preset:
-  # base_url: https://api.openai.com/v1
-  # api_key: sk-xxx (your OpenAI key)
-  # model_name: gpt-4o
+  # Auto-fills: base_url=https://api.openai.com/v1, model_name=gpt-4o
+  # You must provide: api_key
+  # Example:
+  #   preset: openai
+  #   api_key: sk-xxx
+  #   enabled: true
 
-  # --- Custom Configuration ---
-  # Used when preset is set to "custom" or preset not available
-  # Base URL of the LLM API service
-  # Examples:
-  #   - Ollama: http://localhost:11434/v1
-  #   - OpenAI: https://api.openai.com/v1
-  #   - Custom: http://your-server:8000/v1
+  # --- Manual Configuration ---
+  # Used when preset=custom, or to override preset values
   base_url: ""
-
-  # API key for authentication (leave empty if not required)
-  # Ollama doesn't need a key
   api_key: ""
-
-  # Model name to use
-  # Examples:
-  #   - Ollama: qwen3-vl:4b, qwen2.5-vl:7b
-  #   - OpenAI: gpt-4o, gpt-4-vision-preview
-  #   - Custom: qwen3-vl-32b-instruct
   model_name: ""
 
   # Enable/disable LLM enhancement
-  # Set to true to use LLM for improving layout and text extraction
   enabled: false
 
-  # No proxy settings for internal LLM services
-  # Set to base_url hostname or domain to bypass proxy
-  # Example: api.openai.xxxx, localhost, 10.0.0.0/8
-  # Leave empty to use system default proxy settings
+  # No proxy settings (auto-filled by ollama preset)
   no_proxy: ""
 
-  # Maximum number of pages to process with LLM per batch
-  # Reduce this if you encounter rate limiting or memory issues
+  # Advanced settings
   batch_size: 5
-
-  # Timeout in seconds for LLM API calls
   timeout: 60
