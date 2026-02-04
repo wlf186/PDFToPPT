@@ -1,7 +1,7 @@
 # PDF to PPT Converter - Python Dependencies
 
 # PDF parsing
-pymupdf>=1.23.0
+PyMuPDF>=1.23.0
 
 # PPT generation
 python-pptx>=1.0.0
