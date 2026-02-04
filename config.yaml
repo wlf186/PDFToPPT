@@ -2,15 +2,42 @@
 # Leave fields empty to disable LLM enhancement
 
 llm:
+  # Preset configurations (quick switch between different LLM providers)
+  # Available presets: ollama, openai, custom
+  # Set to 'custom' to use manual configuration below
+  preset: "custom"
+
+  # --- Preset: Ollama (local) ---
+  # For ollama preset, these values are used automatically:
+  # base_url: http://localhost:11434/v1
+  # api_key: (empty)
+  # model_name: qwen3-vl:4b (or your ollama model)
+  # no_proxy: localhost
+
+  # --- Preset: OpenAI ---
+  # For openai preset:
+  # base_url: https://api.openai.com/v1
+  # api_key: sk-xxx (your OpenAI key)
+  # model_name: gpt-4o
+
+  # --- Custom Configuration ---
+  # Used when preset is set to "custom" or preset not available
   # Base URL of the LLM API service
-  # Example: http://localhost:8000/v1, https://api.openai.com/v1
+  # Examples:
+  #   - Ollama: http://localhost:11434/v1
+  #   - OpenAI: https://api.openai.com/v1
+  #   - Custom: http://your-server:8000/v1
   base_url: ""
 
   # API key for authentication (leave empty if not required)
+  # Ollama doesn't need a key
   api_key: ""
 
   # Model name to use
-  # Example: qwen-vl-max-0809, gpt-4o, qwen3-vl-32b-instruct
+  # Examples:
+  #   - Ollama: qwen3-vl:4b, qwen2.5-vl:7b
+  #   - OpenAI: gpt-4o, gpt-4-vision-preview
+  #   - Custom: qwen3-vl-32b-instruct
   model_name: ""
 
   # Enable/disable LLM enhancement

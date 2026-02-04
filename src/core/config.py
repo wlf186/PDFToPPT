@@ -7,9 +7,27 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# LLM Presets configuration
+LLM_PRESETS = {
+    "ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "api_key": "",
+        "model_name": "qwen3-vl:4b",
+        "no_proxy": "localhost",
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "",  # User needs to provide
+        "model_name": "gpt-4o",
+        "no_proxy": "",
+    },
+}
+
+
 class LLMConfig(BaseModel):
     """LLM service configuration."""
 
+    preset: str = Field(default="custom", description="Preset name (ollama, openai, custom)")
     base_url: str = Field(default="", description="Base URL of the LLM API service")
     api_key: str = Field(default="", description="API key for authentication")
     model_name: str = Field(default="", description="Model name to use")
@@ -26,7 +44,29 @@ class LLMConfig(BaseModel):
         """Get model info for display."""
         if not self.is_configured():
             return "LLM: Not configured"
-        return f"LLM: {self.model_name} @ {self.base_url}"
+        preset_info = f" [{self.preset}]" if self.preset != "custom" else ""
+        return f"LLM: {self.model_name}{preset_info} @ {self.base_url}"
+
+    def apply_preset(self) -> "LLMConfig":
+        """
+        Apply preset configuration if set.
+
+        Returns:
+            Self with preset applied
+        """
+        if self.preset in LLM_PRESETS:
+            preset_config = LLM_PRESETS[self.preset]
+            # Only use preset values if custom values are empty
+            if not self.base_url:
+                self.base_url = preset_config["base_url"]
+            if not self.model_name and preset_config["model_name"]:
+                self.model_name = preset_config["model_name"]
+            if not self.no_proxy and preset_config["no_proxy"]:
+                self.no_proxy = preset_config["no_proxy"]
+            # api_key from preset only if it's not empty (for security)
+            if preset_config["api_key"] and not self.api_key:
+                self.api_key = preset_config["api_key"]
+        return self
 
 
 class Config(BaseModel):
@@ -69,6 +109,9 @@ class Config(BaseModel):
             # Parse LLM config
             llm_data = data.get("llm", {})
             llm_config = LLMConfig(**llm_data)
+
+            # Apply preset if set
+            llm_config = llm_config.apply_preset()
 
             return cls(llm=llm_config)
         except ImportError:
