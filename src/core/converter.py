@@ -179,7 +179,11 @@ class PDFToPPTConverter:
 
                 try:
                     # Render page as image for LLM
-                    page_image = extractor.render_page_as_image(page)
+                    # Use lower DPI for local models to speed up processing
+                    llm_dpi = 100 if self.config.llm.preset == "ollama" else 150
+                    page_image = extractor.render_page_as_image(page, dpi=llm_dpi)
+
+                    logger.debug(f"LLM enhancement image: {len(page_image) / 1024:.1f} KB at {llm_dpi} DPI")
 
                     # Get LLM enhancement
                     enhancement = self.llm_client.enhance_page_sync(
