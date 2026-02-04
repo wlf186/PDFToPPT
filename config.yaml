@@ -17,6 +17,12 @@ llm:
   # Set to true to use LLM for improving layout and text extraction
   enabled: false
 
+  # No proxy settings for internal LLM services
+  # Set to base_url hostname or domain to bypass proxy
+  # Example: api.openai.xxxx, localhost, 10.0.0.0/8
+  # Leave empty to use system default proxy settings
+  no_proxy: ""
+
   # Maximum number of pages to process with LLM per batch
   # Reduce this if you encounter rate limiting or memory issues
   batch_size: 5

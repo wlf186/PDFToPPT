@@ -14,6 +14,7 @@ class LLMConfig(BaseModel):
     api_key: str = Field(default="", description="API key for authentication")
     model_name: str = Field(default="", description="Model name to use")
     enabled: bool = Field(default=False, description="Enable LLM enhancement")
+    no_proxy: str = Field(default="", description="No proxy settings for internal services")
     batch_size: int = Field(default=5, description="Pages per batch")
     timeout: int = Field(default=60, description="API timeout in seconds")
 

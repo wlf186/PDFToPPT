@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from .config import LLMConfig
@@ -28,6 +29,18 @@ class LLMClient:
         if not config.is_configured():
             self._error_message = "LLM not configured (set base_url and model_name in config.yaml)"
             return
+
+        # Set NO_PROXY for internal services
+        if config.no_proxy:
+            # Append to existing NO_PROXY if present
+            existing_no_proxy = os.environ.get("NO_PROXY", "")
+            if existing_no_proxy:
+                os.environ["NO_PROXY"] = f"{existing_no_proxy},{config.no_proxy}"
+            else:
+                os.environ["NO_PROXY"] = config.no_proxy
+            # Also set no_proxy (lowercase) for some systems
+            os.environ["no_proxy"] = os.environ["NO_PROXY"]
+            logger.info(f"Set NO_PROXY={config.no_proxy} for internal LLM service")
 
         # Try to import and initialize OpenAI client
         try:
