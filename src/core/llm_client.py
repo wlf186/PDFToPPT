@@ -156,32 +156,37 @@ class LLMClient:
 
     def _build_prompt(self, page_number: int, extracted_text: str) -> str:
         """Build prompt for LLM."""
-        return f"""You are a PDF to PowerPoint conversion assistant. Analyze this page image and extract structured content for creating a PPT slide.
+        return f"""You are a PDF to PowerPoint conversion assistant. Analyze this page image and extract ALL text content for creating a PPT slide.
 
-Page {page_number} - Already extracted text:
-{extracted_text if extracted_text else "(No text extracted)"}
+Page {page_number} - Already extracted text (for reference):
+{extracted_text if extracted_text else "(No text extracted - this might be a scanned PDF)"}
+
+IMPORTANT: If this is a scanned/image-based PDF with no extractable text, you MUST extract all text from the image using your vision capabilities.
 
 Please analyze the image and provide a JSON response with the following structure:
 {{
-    "title": "Main title or heading of this slide",
+    "title": "Main title or heading of this slide (empty string if none)",
     "content_blocks": [
         {{
-            "type": "heading|paragraph|list|table|image",
-            "text": "Content text",
-            "position": {{"x0": 0, "y0": 0, "x1": 100, "y1": 20}},
+            "type": "heading|paragraph|list_item",
+            "text": "The actual text content (extract from image if needed)",
+            "position": {{"x0_pct": 0.0, "y0_pct": 0.0, "x1_pct": 1.0, "y1_pct": 0.1}},
             "style": {{"font_size": 18, "bold": true, "color": [0,0,0]}}
         }}
     ],
-    "layout": "title_top|two_column|blank|other",
     "background_color": [255, 255, 255]
 }}
 
+Position format: Use PERCENTAGES (0.0 to 1.0) relative to page size:
+- x0_pct, y0_pct: top-left corner (0,0 = top-left of page)
+- x1_pct, y1_pct: bottom-right corner (1,1 = bottom-right of page)
+
 Focus on:
-1. Correct text hierarchy and grouping
-2. Proper positioning of elements
-3. Font styles and sizes
-4. Color information
-5. Table structures if present
+1. Extract ALL text from the image (especially for scanned PDFs)
+2. Correct text hierarchy (headings, paragraphs, lists)
+3. Proper positioning using percentages
+4. Font styles (size, bold, color) - estimate from visual appearance
+5. Group list items together
 
 Respond ONLY with valid JSON, no additional text."""
 

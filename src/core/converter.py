@@ -9,7 +9,7 @@ import pymupdf
 
 from .config import get_config
 from .llm_client import LLMClient
-from .pdf_parser import PDFElementExtractor
+from .pdf_parser import FontInfo, PDFElementExtractor
 from .ppt_builder import PPTBuilder
 
 logger = logging.getLogger(__name__)
@@ -63,6 +63,85 @@ class PDFToPPTConverter:
         """Call progress callback if available."""
         if self.progress_callback:
             self.progress_callback(current, total, using_llm, message)
+
+    def _apply_llm_enhancement(
+        self,
+        builder: PPTBuilder,
+        page: pymupdf.Page,
+        enhancement: dict,
+        pdf_width: float,
+        pdf_height: float,
+    ) -> bool:
+        """
+        Apply LLM enhancement results to the slide.
+
+        Args:
+            builder: PPT builder instance
+            page: Current PDF page
+            enhancement: LLM enhancement result
+            pdf_width: Page width in points
+            pdf_height: Page height in points
+
+        Returns:
+            True if enhancement was successfully applied
+        """
+        try:
+            content_blocks = enhancement.get("content_blocks", [])
+            if not content_blocks:
+                logger.warning("LLM returned no content blocks")
+                return False
+
+            # Clear the slide first (remove default text boxes)
+            # Actually, we should add content AFTER clearing, but python-pptx doesn't support deletion easily
+            # So we'll just add new text boxes on top
+
+            for block in content_blocks:
+                block_type = block.get("type", "paragraph")
+                text = block.get("text", "").strip()
+                if not text:
+                    continue
+
+                # Parse position (percentages to points)
+                position = block.get("position", {})
+                x0_pct = position.get("x0_pct", 0.0)
+                y0_pct = position.get("y0_pct", 0.0)
+                x1_pct = position.get("x1_pct", 1.0)
+                y1_pct = position.get("y1_pct", 0.1)
+
+                # Convert to points
+                x0 = x0_pct * pdf_width
+                y0 = y0_pct * pdf_height
+                x1 = x1_pct * pdf_width
+                y1 = y1_pct * pdf_height
+
+                # Parse style
+                style = block.get("style", {})
+                font_size = style.get("font_size", 12)
+                bold = style.get("bold", False)
+                color = style.get("color", [0, 0, 0])
+
+                # Create font info
+                font_info = FontInfo(
+                    font="Calibri",
+                    size=font_size,
+                    color=tuple(color) if isinstance(color, list) else (0, 0, 0),
+                    bold=bold,
+                    italic=False,
+                )
+
+                # Add text box to slide
+                builder.add_text_box(
+                    text=text,
+                    bbox=(x0, y0, x1, y1),
+                    font_info=font_info,
+                )
+
+            logger.info(f"Applied {len(content_blocks)} content blocks from LLM")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error applying LLM enhancement: {e}")
+            return False
 
     def get_llm_status(self) -> dict:
         """
@@ -138,6 +217,7 @@ class PDFToPPTConverter:
         for page_num, page in enumerate(self.doc):
             current_page = page_num + 1
             using_llm_this_page = False
+            llm_enhancement_applied = False
 
             # Update progress - starting page
             self._update_progress(current_page, total_pages, False, f"Processing page {current_page}/{total_pages}")
@@ -145,45 +225,18 @@ class PDFToPPTConverter:
             # Create a new slide for this page
             builder.add_slide()
 
-            # Collect all page text for LLM context
-            page_text = ""
+            # Get page dimensions for this specific page
+            page_rect = page.rect
+            page_width = page_rect.width
+            page_height = page_rect.height
 
-            # Extract text blocks
-            text_blocks = extractor.extract_text_blocks(page)
-            for text_block in text_blocks:
-                page_text += text_block.text + "\n"
-                builder.add_text_box(
-                    text=text_block.text,
-                    bbox=text_block.bbox,
-                    font_info=text_block.font_info,
-                )
-
-            # Extract images
-            images = extractor.extract_images(page)
-            for image_block in images:
-                builder.add_image(
-                    image_bytes=image_block.image_bytes,
-                    bbox=image_block.bbox,
-                )
-
-            # Detect and add tables
-            tables = extractor.detect_tables(page, text_blocks)
-            for table_block in tables:
-                builder.add_table(
-                    rows=table_block.rows,
-                    cols=table_block.cols,
-                    bbox=table_block.bbox,
-                    data=table_block.data,
-                )
-
-            # Use LLM for enhancement if available AND enabled in config
+            # First, try LLM enhancement if enabled (this will handle scanned PDFs via vision)
             if llm_available and self.llm_client and self.config.llm.use_enhancement:
                 using_llm_this_page = True
                 self._update_progress(current_page, total_pages, True, f"Page {current_page}: LLM analyzing...")
 
                 try:
                     # Render page as image for LLM
-                    # Use lower DPI for local models to speed up processing
                     llm_dpi = 100 if self.config.llm.preset == "ollama" else 150
                     page_image = extractor.render_page_as_image(page, dpi=llm_dpi)
 
@@ -193,31 +246,62 @@ class PDFToPPTConverter:
                     enhancement = self.llm_client.enhance_page_sync(
                         page_image=page_image,
                         page_number=current_page,
-                        extracted_text=page_text,
+                        extracted_text="",  # Let LLM extract everything from image
                     )
 
                     if "error" not in enhancement:
-                        logger.debug(f"Page {current_page} LLM enhancement successful")
-                        # Enhancement data available for future use
-                        # Can be used to improve layout, styling, etc.
+                        # Apply LLM enhancement to slide
+                        if self._apply_llm_enhancement(builder, page, enhancement, page_width, page_height):
+                            llm_enhancement_applied = True
+                            logger.info(f"Page {current_page}: LLM enhancement applied successfully")
+                        else:
+                            logger.warning(f"Page {current_page}: LLM enhancement returned no usable data")
+                            using_llm_this_page = False
                     else:
-                        logger.warning(f"Page {current_page} LLM enhancement failed: {enhancement.get('error')}")
+                        logger.warning(f"Page {current_page}: LLM enhancement failed: {enhancement.get('error')}")
                         using_llm_this_page = False
 
                 except Exception as e:
                     logger.warning(f"LLM enhancement failed for page {current_page}: {e}")
                     using_llm_this_page = False
 
-            # Check if page has any extractable content
-            # If no text, images, or tables were found, render the whole page as an image
-            # (handles scanned PDFs when OCR is not available)
-            if not text_blocks and not images and not tables:
-                rect = page.rect
-                page_image = extractor.render_page_as_image(page)
-                builder.add_image(
-                    image_bytes=page_image,
-                    bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
-                )
+            # If LLM enhancement was not applied, fall back to traditional extraction
+            if not llm_enhancement_applied:
+                # Extract text blocks
+                text_blocks = extractor.extract_text_blocks(page)
+                for text_block in text_blocks:
+                    builder.add_text_box(
+                        text=text_block.text,
+                        bbox=text_block.bbox,
+                        font_info=text_block.font_info,
+                    )
+
+                # Extract images
+                images = extractor.extract_images(page)
+                for image_block in images:
+                    builder.add_image(
+                        image_bytes=image_block.image_bytes,
+                        bbox=image_block.bbox,
+                    )
+
+                # Detect and add tables
+                tables = extractor.detect_tables(page, text_blocks)
+                for table_block in tables:
+                    builder.add_table(
+                        rows=table_block.rows,
+                        cols=table_block.cols,
+                        bbox=table_block.bbox,
+                        data=table_block.data,
+                    )
+
+                # Check if page has any extractable content
+                # If no text, images, or tables were found, render the whole page as an image
+                if not text_blocks and not images and not tables:
+                    page_image = extractor.render_page_as_image(page)
+                    builder.add_image(
+                        image_bytes=page_image,
+                        bbox=(page_rect.x0, page_rect.y0, page_rect.x1, page_rect.y1),
+                    )
 
             # Update progress - page completed
             llm_status = " [LLM]" if using_llm_this_page else ""
