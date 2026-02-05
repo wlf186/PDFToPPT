@@ -1,14 +1,18 @@
 """FastAPI web application for PDF to PPT conversion."""
 
 import io
+import json
 import logging
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Optional
+from queue import Queue
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 from core import PDFToPPTConverter
 
@@ -16,8 +20,20 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PDF to PPT Converter", version="1.0.0")
 
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Get the directory of this file
 BASE_DIR = Path(__file__).parent
+
+# Store progress queues for SSE
+progress_queues: dict[str, Queue] = {}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -27,6 +43,46 @@ async def index():
     if not template_path.exists():
         return HTMLResponse(content="<h1>Template not found</h1>", status_code=404)
     return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Return empty response for favicon to avoid 404 errors."""
+    from fastapi.responses import Response
+    # Return a tiny 1x1 transparent PNG as favicon
+    favicon_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xdb\x00\x00\x00\x00IEND\xaeB`\x82"
+    return Response(content=favicon_data, media_type="image/x-icon")
+
+
+@app.get("/progress/{job_id}")
+async def progress_stream(job_id: str):
+    """Server-Sent Events endpoint for real-time progress updates."""
+    from fastapi.responses import StreamingResponse
+
+    if job_id not in progress_queues:
+        progress_queues[job_id] = Queue()
+
+    queue = progress_queues[job_id]
+
+    async def event_generator():
+        try:
+            while True:
+                # Check for new progress updates
+                if not queue.empty():
+                    data = queue.get()
+                    if data is None:  # End of stream signal
+                        break
+                    yield f"data: {json.dumps(data)}\n\n"
+                else:
+                    # Send heartbeat every second
+                    yield ": heartbeat\n\n"
+                    import asyncio
+                    await asyncio.sleep(0.5)
+        finally:
+            # Clean up queue after connection closes
+            progress_queues.pop(job_id, None)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/llm-status")
@@ -52,6 +108,9 @@ async def convert_pdf(
 
     Returns the converted PPTX file as a download.
     """
+    # Generate unique job ID for progress tracking
+    job_id = str(uuid.uuid4())
+
     # Validate file type
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
@@ -65,6 +124,27 @@ async def convert_pdf(
             logger.warning(f"LLM enabled but not available: {llm_status.get('message')}")
         else:
             logger.info("LLM enhancement is disabled")
+
+    # Create progress queue for this job
+    progress_queues[job_id] = Queue()
+
+    # Setup progress callback that sends to queue
+    def progress_callback(current: int, total: int, using_llm: bool, message: str):
+        """Send progress updates to queue."""
+        progress = int((current / total) * 100) if total > 0 else 0
+        progress_data = {
+            "current": current,
+            "total": total,
+            "progress": progress,
+            "using_llm": using_llm,
+            "message": message,
+        }
+        # Non-blocking put
+        if job_id in progress_queues:
+            try:
+                progress_queues[job_id].put_nowait(progress_data)
+            except:
+                pass
 
     # Create temporary files
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -82,12 +162,6 @@ async def convert_pdf(
         output_filename = pdf_path.stem + ".pptx"
         ppt_path = temp_dir_path / output_filename
 
-        # Setup progress callback for logging
-        def progress_callback(current: int, total: int, using_llm: bool, message: str):
-            """Log progress updates."""
-            llm_tag = " [LLM]" if using_llm else ""
-            logger.info(f"[{file.filename}] Page {current}/{total}{llm_tag}: {message}")
-
         # Perform conversion
         try:
             logger.info(f"[{file.filename}] Starting conversion...")
@@ -103,6 +177,9 @@ async def convert_pdf(
             logger.info(f"[{file.filename}] Conversion completed successfully")
         except Exception as e:
             logger.error(f"[{file.filename}] Conversion failed: {e}")
+            # Send error via progress queue
+            if job_id in progress_queues:
+                progress_queues[job_id].put_nowait({"error": str(e)})
             raise HTTPException(
                 status_code=500, detail=f"Conversion failed: {str(e)}"
             )
@@ -113,11 +190,20 @@ async def convert_pdf(
 
         ppt_bytes = ppt_path.read_bytes()
 
+    # Signal completion and clean up queue
+    if job_id in progress_queues:
+        progress_queues[job_id].put_nowait({"complete": True})
+        progress_queues[job_id].put_nowait(None)  # End signal
+        del progress_queues[job_id]
+
     # Return the file from memory (after temp dir is cleaned up)
     return StreamingResponse(
         io.BytesIO(ppt_bytes),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        headers={"Content-Disposition": f"attachment; filename={output_filename}"},
+        headers={
+            "Content-Disposition": f"attachment; filename={output_filename}",
+            "X-Job-ID": job_id,  # Return job ID for client to track progress
+        },
     )
 
 

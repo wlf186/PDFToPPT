@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF to PPT Converter</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
     <style>
         * {
             margin: 0;
@@ -405,29 +406,68 @@
             result.classList.remove('show');
             convertBtn.disabled = true;
             progress.classList.add('show');
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Starting conversion...';
 
             const formData = new FormData();
             formData.append('file', selectedFile);
             formData.append('ocr', ocrCheckbox.checked);
             formData.append('ocr_lang', langSelect.value);
 
-            try {
-                // Simulate progress
-                let progressValue = 0;
-                const progressInterval = setInterval(() => {
-                    if (progressValue < 90) {
-                        progressValue += 10;
-                        progressFill.style.width = progressValue + '%';
-                    }
-                }, 200);
+            let eventSource = null;
+            let completed = false;
 
+            try {
+                // Start progress listener
+                eventSource = new EventSource('/progress/' + Date.now() + '-' + Math.random().toString(36).substr(2, 9));
+
+                eventSource.onmessage = function(e) {
+                    if (e.data.startsWith('{')) {
+                        const data = JSON.parse(e.data);
+
+                        if (data.error) {
+                            showError(data.error);
+                            completed = true;
+                            eventSource.close();
+                            progress.classList.remove('show');
+                            convertBtn.disabled = false;
+                            return;
+                        }
+
+                        if (data.complete) {
+                            completed = true;
+                            eventSource.close();
+                            return;
+                        }
+
+                        // Update progress
+                        if (data.current !== undefined && data.total !== undefined) {
+                            progressFill.style.width = data.progress + '%';
+
+                            // Build progress message
+                            let message = `Page ${data.current}/${data.total}`;
+                            if (data.message) {
+                                message += ': ' + data.message;
+                            }
+                            if (data.using_llm) {
+                                message += ' [LLM]';
+                            }
+                            progressText.textContent = message;
+                        }
+                    }
+                };
+
+                eventSource.onerror = function() {
+                    if (!completed) {
+                        eventSource.close();
+                    }
+                };
+
+                // Start conversion
                 const response = await fetch('/convert', {
                     method: 'POST',
                     body: formData
                 });
-
-                clearInterval(progressInterval);
-                progressFill.style.width = '100%';
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ detail: 'Conversion failed' }));
@@ -442,11 +482,18 @@
                 downloadBtn.href = url;
                 downloadBtn.download = selectedFile.name.replace('.pdf', '.pptx');
 
+                // Wait a bit for final progress update
+                await new Promise(resolve => setTimeout(resolve, 500));
+
                 // Show result
                 progress.classList.remove('show');
                 result.classList.add('show');
+                completed = true;
+                eventSource.close();
 
             } catch (err) {
+                completed = true;
+                if (eventSource) eventSource.close();
                 progress.classList.remove('show');
                 showError(err.message || 'An error occurred during conversion.');
             } finally {
