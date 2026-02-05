@@ -3,7 +3,7 @@
 llm:
   # Preset configurations (quick switch between different LLM providers)
   # Available presets: ollama, openai, custom
-  preset: "custom"
+  preset: "ollama"
 
   # --- Preset: Ollama (local, CPU inference = slow) ---
   # Auto-fills: base_url=http://localhost:11434/v1, model_name=qwen3-vl:4b
@@ -31,7 +31,7 @@ llm:
 
   # Enable LLM for OCR (scanned PDFs)
   # If false, scanned PDFs will render as images instead
-  enabled: false
+  enabled: true
 
   # Enable LLM layout enhancement (analyzes page structure)
   # WARNING: Very slow on CPU! Only enable for GPU/cloud APIs

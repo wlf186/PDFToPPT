@@ -82,10 +82,18 @@ class PPTBuilder:
         font.name = font_info.font or "Calibri"
         font.size = Pt(font_info.size)
 
-        # Set color
+        # Set color - detect if color is too light for white background
         if isinstance(font_info.color, (tuple, list)) and len(font_info.color) >= 3:
             r, g, b = font_info.color[:3]
+            # Calculate luminance to detect if text is too light for white background
+            luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+            # If luminance > 0.5, text is too light for white background, use dark gray
+            if luminance > 0.5:
+                r, g, b = 51, 51, 51  # Dark gray for better readability
             font.color.rgb = RGBColor(r, g, b)
+        else:
+            # Default to black if no color specified
+            font.color.rgb = RGBColor(0, 0, 0)
 
         # Set bold/italic
         font.bold = font_info.bold
