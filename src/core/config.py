@@ -50,9 +50,12 @@ class LLMConfig(BaseModel):
         preset_info = f" [{self.preset}]" if self.preset != "custom" else ""
         return f"LLM: {self.model_name}{preset_info} @ {self.base_url}"
 
-    def apply_preset(self) -> "LLMConfig":
+    def apply_preset(self, raw_yaml_data: dict = None) -> "LLMConfig":
         """
         Apply preset configuration if set.
+
+        Args:
+            raw_yaml_data: Raw YAML data to check which fields were explicitly set
 
         Returns:
             Self with preset applied
@@ -69,8 +72,9 @@ class LLMConfig(BaseModel):
             # api_key from preset only if it's not empty (for security)
             if preset_config["api_key"] and not self.api_key:
                 self.api_key = preset_config["api_key"]
-            # use_enhancement from preset
-            self.use_enhancement = preset_config["use_enhancement"]
+            # use_enhancement: only apply preset if not explicitly set in YAML
+            if raw_yaml_data is None or "use_enhancement" not in raw_yaml_data:
+                self.use_enhancement = preset_config["use_enhancement"]
         return self
 
 
@@ -115,8 +119,8 @@ class Config(BaseModel):
             llm_data = data.get("llm", {})
             llm_config = LLMConfig(**llm_data)
 
-            # Apply preset if set
-            llm_config = llm_config.apply_preset()
+            # Apply preset if set (pass raw YAML data to check which fields were explicitly set)
+            llm_config = llm_config.apply_preset(raw_yaml_data=llm_data)
 
             return cls(llm=llm_config)
         except ImportError:

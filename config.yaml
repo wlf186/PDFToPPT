@@ -35,9 +35,9 @@ llm:
 
   # Enable LLM layout enhancement (analyzes page structure)
   # WARNING: Very slow on CPU! Only enable for GPU/cloud APIs
-  # - ollama preset: automatically set to false (CPU is too slow)
+  # - ollama preset: now respects this setting (previously forced false)
   # - cloud APIs: set to true for better layout
-  use_enhancement: false
+  use_enhancement: true
 
   # No proxy settings (auto-filled by ollama preset)
   no_proxy: ""
